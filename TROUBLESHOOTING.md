@@ -2,7 +2,29 @@
 
 ## 真实问题记录
 
-当前运行宿主的插件事故：暂未遇到（未安装）。开发审查确实复现过下面的生命周期缺陷并已修复；基础测试为契约 mock，额外回归使用真实缓存 Cordis Context/Fiber，不冒充线上事故或宿主会话验收。
+当前运行宿主已安装插件的线上事故记录如下；开发审查另复现过若干生命周期缺陷（基础测试为契约 mock，额外回归使用真实缓存 Cordis Context/Fiber，不冒充宿主会话验收）。
+
+### 线上真实问题：换成第三方模型后不派子智能体（v0.2.0 修复）
+
+- 症状：老大 2026-10-18 反馈「目前使用下来，我一换成其他模型。就没有派子智能体干活了。」所选路由为 CodeBuddy(腾讯) Deepseek-V4.1-Flash；同会话换回自家模型立刻恢复派活。
+- 核实过程：先排除插件失效——重启后 `C:/Users/Kayle/.dsh/profiles/desktop/cordis.yml` 中 `dsh-maid-delegation` 条目与 `enabled: true` 都在，挂载日志正常，会话系统提示词里确实带着【子智能体委派纪律】。所以不是没加载，是加载了照旧不听。
+- 原因：**不是插件挂了，是纪律的写法对弱模型无效**。v0.1.0 的文本是「原则陈述」型——「你的默认反应必须是…」「判断标准只有一条…」，靠模型自觉内化。强模型能从中推出动作序列，弱模型只把它当背景描述，读完照旧自己一件件抠。
+- 解法：v0.2.0 把纪律改写成**动作序列 + 借口封堵**——第一步任务分类（超过 3 次工具调用即委派）→ 第二步把「我先自己看看」「这个任务很简单」「我自己做更快」「我模型能力够」「等一会儿再派」五种借口逐条堵死 → 第三步强触发场景 → 第四步真并发 → 第五步工具选型 → 第六步派工四件套 → 第七步收口纪律。同时新增**第二通道** `systemPrompt.context`：在运行时快照里放一句 89 字硬提醒（entry 名 `dsh-maid-delegation:reminder`，order `SUBAGENT_DELEGATION + 1 = 121`），因为弱模型对贴近提示词末尾的短句遵循率高于长文中段。可用 `runtimeReminder: false` 单独关掉次通道。
+- 验证：`node --test` 25/25（含次通道四态）；真实 Cordis 4.0.1 生命周期回归 3/3；`node scripts/verify-guidance.mjs` 输出 `Guidance contract: 7 steps, 5 excuse blockades, reminder 89 chars — all present`。
+
+### 次通道新增时踩到：聚合 disposer 吞掉异常导致测试红
+
+- 症状：加完第二通道后，原有测试「卸载 disposer 异常记录日志，仍清理监听并可再挂」由通过变失败。
+- 原因：初版聚合 disposer 用 `try { d(); } catch { /* 静默 */ }` 包住每个通道，第三方 disposer 抛错被吞掉，`cleanup` 的 catch 再也拿不到异常，日志里就没有 `dispose exploded`。
+- 解法：聚合 disposer 收集所有失败，末尾 `throw failures[0]` 交回 `cleanup` 的 catch 记日志——既保证所有通道都尝试卸载，又不让失败静默。
+- 验证：该测试恢复通过，25/25 全绿。
+
+### 次通道可能失效的场景：被 suppressRuntimeContext 抑制
+
+- 症状：挂载日志显示 `通道: 2`，但最终提示词里搜不到那句短提醒。
+- 原因：`refreshContext()` 里 `suppressed` 为真时可选上下文全部剔除；宿主或某个 preset 调用了 `suppressRuntimeContext()`，本插件的非 required 条目也会一起被丢。
+- 解法：检查 `C:/Users/Kayle/.dsh/profiles/desktop/cordis.yml` 与各 preset 是否调用了 `suppressRuntimeContext()`；若确实抑制，主 section 通道仍生效，可把 `guidance` 自定义成更短的强动作版，或去掉抑制。
+- 验证：在宿主最终提示词里搜 `dsh-maid-delegation:reminder` 的正文片段。
 
 ### 本次审查实际遇到：普通 dispose 事件不能代替 Fiber 生命周期
 
@@ -48,7 +70,7 @@
 
 ## 重跑离线测试
 
-在本目录执行 `node --test`（19/19 通过）与 `node --check lib/index.js`。静态迁移一致性可执行：
+在本目录执行 `node --test`（25/25 通过）与 `node --check lib/index.js`。静态迁移一致性可执行：
 
 ```bash
 node scripts/verify-source.mjs 'D:/Works By DSH/_probe/preset-delegation-migration-20261018T082752Z/source/cordis.patch.yml'
