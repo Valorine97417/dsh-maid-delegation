@@ -1,0 +1,8 @@
+node_modules/
+.npm-cache/
+*.tgz
+
+*.bak*
+.npm-cache/
+*.log
+node_modules/

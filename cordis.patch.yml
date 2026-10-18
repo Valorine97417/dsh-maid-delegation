@@ -1,0 +1,7 @@
+# dsh-maid-delegation bundle patch
+# 独立委派纪律插件；向宿主装配层注入本插件，向 systemPrompt 挂载子智能体委派指引
+- insert:
+    - id: maid-delegation
+      name: 'dsh-maid-delegation'
+      config:
+        enabled: true
