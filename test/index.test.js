@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { apply, SECTION_NAME, DEFAULT_DELEGATION_GUIDANCE, MAX_ATTEMPTS } from '../lib/index.js';
+import { apply, SECTION_NAME, DEFAULT_DELEGATION_GUIDANCE, MAX_ATTEMPTS, RUNTIME_REMINDER, CONTEXT_NAME } from '../lib/index.js';
 
 // 按缓存 system-prompt section/getSectionOrder 及 Cordis ctx.get/effect 契约 mock。
 // 不伪装为真实宿主集成；section 同层重复名抛错，返回 disposer。
@@ -182,17 +182,134 @@ test('logger 缺失或抛错时 console 提供可见失败日志', t => {
   assert.equal(lines.filter(x => x.includes('visible failure')).length, 2);
 });
 
+test('第二通道：宿主提供 context 时额外注册运行时短提醒，卸载一并清掉', () => {
+  const f = fixture();
+  const contexts = new Map();
+  f.service.getContextOrder = () => 120;
+  f.service.context = (def) => {
+    assert.ok(Number.isFinite(def.order));
+    if (contexts.has(def.name)) throw new Error('duplicate context');
+    contexts.set(def.name, def);
+    return () => contexts.delete(def.name);
+  };
+  apply(f.ctx);
+  assert.equal(f.sections.size, 1);
+  assert.equal(contexts.size, 1);
+  const reminder = [...contexts.values()][0];
+  assert.equal(reminder.text, RUNTIME_REMINDER);
+  assert.equal(reminder.interpolate, false);
+  assert.equal(reminder.order, 121);
+  f.dispose();
+  assert.equal(contexts.size, 0);
+  assert.equal(f.sections.size, 0);
+});
+
+test('第二通道：宿主无 context API 时静默跳过，主 section 不受影响', () => {
+  const f = fixture();
+  apply(f.ctx);
+  assert.equal(f.sections.size, 1);
+  assert.equal(f.sections.get(SECTION_NAME).text, DEFAULT_DELEGATION_GUIDANCE);
+  f.dispose();
+});
+
+test('第二通道：context 注册抛错时记日志，主 section 仍在', () => {
+  const f = fixture();
+  f.service.getContextOrder = () => 120;
+  f.service.context = () => { throw new Error('context exploded'); };
+  apply(f.ctx);
+  assert.equal(f.sections.size, 1);
+  assert.ok(f.logs.some(x => x.includes('context exploded')));
+  f.dispose();
+  assert.equal(f.sections.size, 0);
+});
+
+test('第二通道：runtimeReminder false 时只挂主 section', () => {
+  const f = fixture();
+  const contexts = new Map();
+  f.service.getContextOrder = () => 120;
+  f.service.context = (def) => { contexts.set(def.name, def); return () => contexts.delete(def.name); };
+  apply(f.ctx, { runtimeReminder: false });
+  assert.equal(f.sections.size, 1);
+  assert.equal(contexts.size, 0);
+  f.dispose();
+});
+
+test('第二通道：getContextOrder 存在但返回非有限时回退 121；缺失 API 时跳过', () => {
+  for (const getter of [() => undefined, () => NaN, () => Infinity]) {
+    const f = fixture();
+    const seen = [];
+    f.service.getContextOrder = getter;
+    f.service.context = (def) => { seen.push(def); return () => {}; };
+    apply(f.ctx);
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].order, 121);
+    assert.equal(seen[0].name, CONTEXT_NAME);
+    f.dispose();
+  }
+  // 宿主完全没有 getContextOrder 时不注册第二通道，主 section 仍在。
+  const missing = fixture();
+  const seen = [];
+  missing.service.context = (def) => { seen.push(def); return () => {}; };
+  apply(missing.ctx);
+  assert.equal(seen.length, 0);
+  assert.equal(missing.sections.size, 1);
+  missing.dispose();
+});
+
+test('第二通道：context 返回非 disposer 时记日志且不污染卸载', () => {
+  const f = fixture();
+  f.service.getContextOrder = () => 120;
+  f.service.context = () => undefined;
+  apply(f.ctx);
+  assert.equal(f.sections.size, 1);
+  assert.ok(f.logs.some(x => x.includes('context')));
+  f.dispose();
+  assert.equal(f.sections.size, 0);
+});
+
+test('第二通道：runtimeReminderRequired 时给条目加 required', () => {
+  const f = fixture();
+  const seen = [];
+  f.service.getContextOrder = () => 120;
+  f.service.context = (def) => { seen.push(def); return () => {}; };
+  apply(f.ctx, { runtimeReminderRequired: true });
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].required, true);
+  f.dispose();
+});
+
+test('第二通道：默认不带 required，尊重 preset 的 suppress 意图', () => {
+  const f = fixture();
+  const seen = [];
+  f.service.getContextOrder = () => 120;
+  f.service.context = (def) => { seen.push(def); return () => {}; };
+  apply(f.ctx);
+  assert.equal(seen.length, 1);
+  assert.equal('required' in seen[0], false);
+  f.dispose();
+});
+
+test('运行时提醒带生效前提，避免与子代理深度限制字面冲突', () => {
+  // 本条注册在全局层会继承进子代理 scope；宿主 order 120 的 depth 提示可能
+  // 说「当前深度禁止再派」，本条排 121 更醒目，首句必须先声明适用前提。
+  assert.ok(RUNTIME_REMINDER.startsWith('（仅当当前不在子代理内、且委派深度未触顶时适用）'),
+    '运行时提醒缺少生效前提声明');
+  assert.ok(RUNTIME_REMINDER.includes('先开 subagent 派出去'));
+});
+
 test('manifest 提供 ESM 与独立 bundle 入口，仅加载插件无 preset/routes/seed', () => {
   const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
-  assert.equal(pkg.name, 'dsh-maid-delegation'); assert.equal(pkg.version, '0.1.0');
+  assert.equal(pkg.name, 'dsh-maid-delegation'); assert.equal(pkg.version, '0.2.0');
   assert.ok(pkg.description.startsWith('DSH 小困插件 · 子智能体委派：'));
   assert.equal(pkg.type, 'module');
   assert.deepEqual(pkg.dsh, { bundle: { patch: './cordis.patch.yml' } });
   assert.equal(pkg.exports['./cordis.patch.yml'], './cordis.patch.yml');
   assert.ok(pkg.files.includes('cordis.patch.yml')); assert.ok(pkg.files.includes('LICENSE'));
   const patch = readFileSync(new URL('../cordis.patch.yml', import.meta.url), 'utf8');
-  assert.equal((patch.match(/^- id:/gm) ?? []).length, 1);
-  assert.match(patch, /name: dsh-maid-delegation\n/);
+  // 宿主 bundle patch 必须以顶层 - insert: 原语书写；裸写 - id: 会被重装配静默跳过。
+  assert.equal((patch.match(/^- insert:/gm) ?? []).length, 1);
+  assert.equal((patch.match(/^\s+- id: /gm) ?? []).length, 1);
+  assert.match(patch, /name: 'dsh-maid-delegation'\n/);
   assert.match(patch, /enabled: true/);
   assert.equal(pkg.dependencies, undefined);
   assert.deepEqual(Object.keys(pkg.peerDependencies), ['@deepseek-ai/cordis']);

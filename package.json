@@ -1,7 +1,7 @@
 {
   "name": "dsh-maid-delegation",
   "description": "DSH 小困插件 · 子智能体委派：提供积极委派策略指引与系统提示词挂载，指导模型高效多代理并发处理。",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
