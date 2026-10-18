@@ -1,19 +1,40 @@
 {
   "name": "dsh-maid-delegation",
-  "description": "DSH 小困插件 · 子智能体委派：独立提示词纪律，支持启停、自定义文本与生命周期清理。",
+  "description": "DSH 小困插件 · 子智能体委派：提供积极委派策略指引与系统提示词挂载，指导模型高效多代理并发处理。",
   "version": "0.1.0",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "license": "MIT",
-  "keywords": ["dsh-plugin", "maid", "delegation"],
-  "scripts": { "test": "node --test" },
-  "files": ["lib", "cordis.patch.yml", "README.md", "TROUBLESHOOTING.md", "LICENSE"],
+  "keywords": [
+    "dsh-plugin",
+    "maid",
+    "delegation"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "TROUBLESHOOTING.md",
+    "LICENSE"
+  ],
   "exports": {
-    ".": { "types": "./lib/index.d.ts", "default": "./lib/index.js" },
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
     "./package.json": "./package.json",
     "./cordis.patch.yml": "./cordis.patch.yml"
   },
-  "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1" },
-  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
 }
