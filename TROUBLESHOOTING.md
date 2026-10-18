@@ -9,8 +9,8 @@
 - 症状：老大 2026-10-18 反馈「目前使用下来，我一换成其他模型。就没有派子智能体干活了。」所选路由为 CodeBuddy(腾讯) Deepseek-V4.1-Flash；同会话换回自家模型立刻恢复派活。
 - 核实过程：先排除插件失效——重启后 `C:/Users/Kayle/.dsh/profiles/desktop/cordis.yml` 中 `dsh-maid-delegation` 条目与 `enabled: true` 都在，挂载日志正常，会话系统提示词里确实带着【子智能体委派纪律】。所以不是没加载，是加载了照旧不听。
 - 原因：**不是插件挂了，是纪律的写法对弱模型无效**。v0.1.0 的文本是「原则陈述」型——「你的默认反应必须是…」「判断标准只有一条…」，靠模型自觉内化。强模型能从中推出动作序列，弱模型只把它当背景描述，读完照旧自己一件件抠。
-- 解法：v0.2.0 把纪律改写成**动作序列 + 借口封堵**——第一步任务分类（超过 3 次工具调用即委派）→ 第二步把「我先自己看看」「这个任务很简单」「我自己做更快」「我模型能力够」「等一会儿再派」五种借口逐条堵死 → 第三步强触发场景 → 第四步真并发 → 第五步工具选型 → 第六步派工四件套 → 第七步收口纪律。同时新增**第二通道** `systemPrompt.context`：在运行时快照里放一句 89 字硬提醒（entry 名 `dsh-maid-delegation:reminder`，order `SUBAGENT_DELEGATION + 1 = 121`），因为弱模型对贴近提示词末尾的短句遵循率高于长文中段。可用 `runtimeReminder: false` 单独关掉次通道。
-- 验证：`node --test` 25/25（含次通道四态）；真实 Cordis 4.0.1 生命周期回归 3/3；`node scripts/verify-guidance.mjs` 输出 `Guidance contract: 7 steps, 5 excuse blockades, reminder 89 chars — all present`。
+- 解法：v0.2.0 把纪律改写成**动作序列 + 借口封堵**——第一步任务分类（超过 3 次工具调用即委派）→ 第二步把「我先自己看看」「这个任务很简单」「我自己做更快」「我模型能力够」「等一会儿再派」五种借口逐条堵死 → 第三步强触发场景 → 第四步真并发 → 第五步工具选型 → 第六步派工四件套 → 第七步收口纪律。同时新增**第二通道** `systemPrompt.context`：在运行时快照里放一句 113 字硬提醒（entry 名 `dsh-maid-delegation:reminder`，order `SUBAGENT_DELEGATION + 1 = 121`），因为弱模型对贴近提示词末尾的短句遵循率高于长文中段。可用 `runtimeReminder: false` 单独关掉次通道。
+- 验证：`node --test` 28/28（含次通道四态与 required 开关）；真实 Cordis 4.0.1 生命周期回归 3/3；`node scripts/verify-guidance.mjs` 输出 `Guidance contract: 7 steps, 5 excuse blockades, reminder 113 chars — all present`。
 
 ### 次通道新增时踩到：聚合 disposer 吞掉异常导致测试红
 
@@ -22,9 +22,17 @@
 ### 次通道可能失效的场景：被 suppressRuntimeContext 抑制
 
 - 症状：挂载日志显示 `通道: 2`，但最终提示词里搜不到那句短提醒。
-- 原因：`refreshContext()` 里 `suppressed` 为真时可选上下文全部剔除；宿主或某个 preset 调用了 `suppressRuntimeContext()`，本插件的非 required 条目也会一起被丢。
-- 解法：检查 `C:/Users/Kayle/.dsh/profiles/desktop/cordis.yml` 与各 preset 是否调用了 `suppressRuntimeContext()`；若确实抑制，主 section 通道仍生效，可把 `guidance` 自定义成更短的强动作版，或去掉抑制。
-- 验证：在宿主最终提示词里搜 `dsh-maid-delegation:reminder` 的正文片段。
+- 原因（真实宿主代码实证）：`refreshContext` 在 `D:\DeepSeek Harness\resources\app.asar\dsh\node_modules\@deepseek-ai\dsh-system-prompt\lib\index.js:326` 计算 `suppressed`，`:331-332` 对非 `required` 条目直接 `required.delete(accepted.name); if (suppressed && provider?.required !== true) continue;` —— **静默跳过，无日志无告警**。`assemble()` 侧 `:394` 同规则过滤，`:399-405` waterfall 后再二次裁剪。唯一 suppressor 源头是 `dsh-persona\lib\index.js:47`：`if (!(config.includeRuntimeContext ?? true)) ctx.systemPrompt.suppressRuntimeContext();`
+- 现状核实：desktop profile 里 `includeRuntimeContext` 只有两处——`:1183 false`（属 `preset-minimal`，非当前选中）、`:1547 true`（属 `preset-whale-girl`，其 `:1531 disabled: true`）。当前在用的 `preset-maid`（`:1747` 起）persona 段无该字段 → 默认 true → **不 suppress，次通道当前生效**。`D:\Works By DSH\dsh-maid-preset` 全目录零命中。
+- 解法：① 别给 `preset-maid` 的 persona 补 `includeRuntimeContext: false`；② 需要硬保活时设 `runtimeReminderRequired: true`（探针实测：suppress 下 `contexts` 仍为 `["dsh-maid-delegation:reminder"]`）；③ 主 section 通道不受 suppress 影响，实测三组场景「system prompt 含 section」恒为 true。
+- 验证：在宿主最终提示词里搜 `委派纪律仍然生效`；或按 `_probe/e2e/probe-scope2.mjs` 复跑 A/B 两组对照。
+
+### 次通道会继承进子代理，与深度限制字面冲突
+
+- 症状：子代理会话的运行时快照里，宿主 order 120 的 depth 提示写着 `Delegation depth for 'subagent': … remaining levels 0. Do not call 'subagent' at this depth`，紧跟其后（order 121）是我们的「先开 subagent 派出去」，更醒目，字面打架。
+- 原因：本条目注册在**全局层**，随 scope 继承进每个子代理会话；排序只按 `order` 升序（`assemble:394`），所以排在宿主 depth 提示之后。
+- 解法：提醒首句加生效前提——`（仅当当前不在子代理内、且委派深度未触顶时适用）`，让「不能派」的情形天然落在本条之外，**不依赖宿主内部字段**（不去读 `context.agent` 猜是不是子代理）。
+- 验证：测试 `运行时提醒带生效前提，避免与子代理深度限制字面冲突` 守住该前缀；`_probe/e2e/probe-child-scope.mjs` 复跑子代理 scope 确认两句并存但边界先声明。
 
 ### 本次审查实际遇到：普通 dispose 事件不能代替 Fiber 生命周期
 
@@ -70,7 +78,7 @@
 
 ## 重跑离线测试
 
-在本目录执行 `node --test`（25/25 通过）与 `node --check lib/index.js`。静态迁移一致性可执行：
+在本目录执行 `node --test`（28/28 通过）与 `node --check lib/index.js`。静态迁移一致性可执行：
 
 ```bash
 node scripts/verify-source.mjs 'D:/Works By DSH/_probe/preset-delegation-migration-20261018T082752Z/source/cordis.patch.yml'
