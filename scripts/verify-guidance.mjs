@@ -12,10 +12,10 @@ const steps = [
   '第一步·任务分类',
   '第二步·封堵借口',
   '第三步·必须委派的场景',
-  '第四步·真并发',
+  '第四步·真并发与正交切分',
   '第五步·工具选型',
-  '第六步·委派 prompt 必须自带四件',
-  '第七步·收口纪律',
+  '第六步·委派 prompt 必须自带五件',
+  '第七步·收口纪律与交叉对账',
 ];
 let cursor = -1;
 for (const step of steps) {
@@ -42,6 +42,12 @@ assert.ok(text.includes('超过 3 次工具调用'), '缺少工具调用次数�
 assert.ok(text.includes('同一条消息里一次性发起多个'), '缺少真并发要求');
 assert.ok(text.includes('绝不许串行'), '缺少禁止串行的表述');
 
+// 3.1) 协同与防撞车断言（防各做各的）
+assert.ok(text.includes('正交铁律'), '缺少正交铁律说明');
+assert.ok(text.includes('职责范围必须绝对互斥'), '缺少互斥分工说明');
+assert.ok(text.includes('角色分工'), '派工五件套缺少角色分工要求');
+assert.ok(text.includes('严禁把两个子代理的回复拼成两截拼盘'), '缺少禁止拼盘的表述');
+
 // 4) 三种委派工具的选型都必须写明。
 for (const tool of ['subagent', 'subagent_fork', 'workflow']) {
   assert.ok(text.includes(tool), `缺少工具选型：${tool}`);
@@ -50,6 +56,7 @@ for (const tool of ['subagent', 'subagent_fork', 'workflow']) {
 // 5) 运行时提醒必须短（太长就失去「贴末尾短句」的优势）且含硬动作。
 assert.ok(RUNTIME_REMINDER.length <= 200, `运行时提醒过长：${RUNTIME_REMINDER.length} 字符`);
 assert.ok(RUNTIME_REMINDER.includes('subagent'), '运行时提醒缺少 subagent 动作');
-assert.ok(RUNTIME_REMINDER.includes('同一条消息并发多个'), '运行时提醒缺少并发要求');
+assert.ok(RUNTIME_REMINDER.includes('正交分工'), '运行时提醒缺少正交分工要求');
+assert.ok(RUNTIME_REMINDER.includes('交叉对账'), '运行时提醒缺少交叉对账要求');
 
 console.log(`Guidance contract: ${steps.length} steps, ${excuses.length} excuse blockades, reminder ${RUNTIME_REMINDER.length} chars — all present`);

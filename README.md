@@ -1,12 +1,12 @@
 # dsh-maid-delegation
 
-DSH 小困插件 · 子智能体委派：独立提供提示词纪律，版本 0.2.0。
+DSH 小困插件 · 子智能体委派：独立提供提示词纪律，版本 0.2.1。
 
 ## 功能与边界
 
 - 注册**双通道**：主通道 `systemPrompt.section`（完整纪律，顺序 `TOOL_SUBAGENT + 1`），次通道 `systemPrompt.context`（一句极短运行时提醒，顺序 `SUBAGENT_DELEGATION + 1` = 121）。次通道用于对抗「换模型后不派活」——弱模型对贴近末端的短句遵循率高于长系统提示词中段。次通道注册失败只记 warn，不影响主通道。
 - 仅注册提示词，不实现调度器，不改并发/深度/权限限制，不注册工具、路由、preset、seed 或 profile patch。
-- 纪律文本已从「原则陈述」改写为「动作序列 + 借口封堵」：第一步任务分类（超过 3 次工具调用即委派）→ 第二步封堵五种常见借口（「我先自己看看」「很简单」「我自己做更快」「模型能力够」「等一会儿再派」）→ 第三步强触发场景 → 第四步真并发（同一条消息一次发多个）→ 第五步工具选型 → 第六步派工四件套 → 第七步收口纪律。
+- 纪律文本采用「动作序列 + 借口封堵 + 正交协同」：第一步任务分类（超过 3 次工具调用即委派）→ 第二步封堵五种常见借口（「我先自己看看」「很简单」「我自己做更快」「模型能力够」「等一会儿再派」）→ 第三步强触发场景 → 第四步真并发与正交切分（职责绝对互斥，严禁重叠踩脚）→ 第五步工具选型 → 第六步派工五件套（带角色分工契约，说明各自边界）→ 第七步收口纪律与交叉对账（抹平矛盾，严禁生拼拼盘）。
 - 本目录实现不改源 preset/profile。若安装环境仍保留旧静态纪律，并用会重复注入；需由迁移流程另行处理。`enabled: false` 只停用本插件，不会移除其他 persona 中的规则。
 - 普通 section 受调用上下文 scope 影响；存在 `complete: true` 的自定义 preset 时，宿主可仅保留 complete 段落，普通 section 不会进入最终提示词。本插件不劫持 complete，不修改 personaPrefix，不绕过宿主装配规则。
 - 次通道（runtime context）**非 required**，一旦 global 层或该 agent 的 scope 链出现任何 `runtimeContextSuppressors` 就会被静默丢弃（详见下方装配实证）。需要硬保活时设 `runtimeReminderRequired: true`；主 section 通道则不受 suppress 影响。
@@ -86,7 +86,7 @@ CORDIS_MODULE='D:/Works By DSH/dsh-maid-comfyui/node_modules/.pnpm/@deepseek-ai+
 
 `node --test`：28 个基础测试，28 通过，0 失败/跳过/取消。覆盖默认/禁用/自定义/空白回退、顺序回退、服务晚到、等待卸载、20 次上限、重复 apply（等待/已挂载）、get/section/order/effect 异常、错误 disposer、日志回落、卸载再挂和 ctx 隔离、次通道六态（正常挂载 / 宿主无 `context` API 跳过 / `runtimeReminder: false` / `runtimeReminderRequired: true` 加 required / 默认不带 required / `context` 抛错与非 disposer 返回值）+ 提醒生效前提前缀、最小 manifest。
 
-纪律文本的结构契约用 `node scripts/verify-guidance.mjs` 校验：7 个步骤齐全且按序、5 种借口全部封堵、工具调用阈值与真并发措辞在位、三种委派工具选型齐全、运行时提醒 ≤200 字符。当前输出 `Guidance contract: 7 steps, 5 excuse blockades, reminder 113 chars — all present`。旧脚本 `scripts/verify-source.mjs` 保留作历史对照（逐字比对迁移前快照的 3 份副本），纪律改写后不再进默认流程。
+纪律文本的结构契约用 `node scripts/verify-guidance.mjs` 校验：7 个步骤齐全且按序、5 种借口全部封堵、正交铁律、角色分工五件套、禁止拼盘、运行时提醒 ≤200 字符。当前输出 `Guidance contract: 7 steps, 5 excuse blockades, reminder 138 chars — all present`。旧脚本 `scripts/verify-source.mjs` 保留作历史对照（逐字比对迁移前快照的 3 份副本），纪律改写后不再进默认流程。
 
 `npm pack --dry-run` 核对 bundle 入口与 LICENSE 实际入包。
 

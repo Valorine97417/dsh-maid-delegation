@@ -299,7 +299,7 @@ test('运行时提醒带生效前提，避免与子代理深度限制字面冲�
 
 test('manifest 提供 ESM 与独立 bundle 入口，仅加载插件无 preset/routes/seed', () => {
   const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
-  assert.equal(pkg.name, 'dsh-maid-delegation'); assert.equal(pkg.version, '0.2.0');
+  assert.equal(pkg.name, 'dsh-maid-delegation'); assert.equal(pkg.version, '0.2.1');
   assert.ok(pkg.description.startsWith('DSH 小困插件 · 子智能体委派：'));
   assert.equal(pkg.type, 'module');
   assert.deepEqual(pkg.dsh, { bundle: { patch: './cordis.patch.yml' } });
